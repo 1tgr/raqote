@@ -757,7 +757,7 @@ mod tests {
     #[test]
     fn arc_contains() {
         let mut pb = PathBuilder::new();
-        pb.arc(50., 25., 10., 0., std::f32::consts::PI);
+        pb.arc(50., 25., 10., 0., core::f32::consts::PI);
         let path = pb.finish();
         assert!(!path.contains_point(0.1, 50., 10.));
         assert!(!path.contains_point(0.1, 50., 20.));

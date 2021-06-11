@@ -4,7 +4,9 @@ use crate::{IntPoint, Point, Transform};
 use crate::draw_target::{ExtendMode, Source, FilterMode};
 
 use euclid::vec2;
-use std::marker::PhantomData;
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+use core::marker::PhantomData;
 
 pub trait Blitter {
     fn blit_span(&mut self, y: i32, x1: i32, x2: i32, mask: &[u8]);

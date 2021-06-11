@@ -20,6 +20,7 @@ mod fk {
     pub use pathfinder_geometry::vector::{vec2f, vec2i};
 }
 
+use alloc::vec::Vec;
 #[cfg(feature = "png")]
 use std::fs::*;
 #[cfg(feature = "png")]
@@ -29,6 +30,7 @@ use crate::stroke::*;
 use crate::{IntRect, IntPoint, Point, Transform, Vector};
 
 use euclid::vec2;
+use num_traits::float::Float;
 
 #[derive(Clone)]
 pub struct Mask {
@@ -1065,7 +1067,7 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
         let len = buf.len();
         // we want to return an [u8] slice instead of a [u32] slice. This is a safe thing to
         // do because requirements of a [u32] slice are stricter.
-        unsafe { std::slice::from_raw_parts(p as *const u8, len * std::mem::size_of::<u32>()) }
+        unsafe { core::slice::from_raw_parts(p as *const u8, len * core::mem::size_of::<u32>()) }
     }
 
     /// Returns a mut reference to the underlying pixel data as individual bytes with the order BGRA
@@ -1076,7 +1078,7 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
         let len = buf.len();
         // we want to return an [u8] slice instead of a [u32] slice. This is a safe thing to
         // do because requirements of a [u32] slice are stricter.
-        unsafe { std::slice::from_raw_parts_mut(p as *mut u8, len * std::mem::size_of::<u32>()) }
+        unsafe { core::slice::from_raw_parts_mut(p as *mut u8, len * core::mem::size_of::<u32>()) }
     }
 
     /// Take ownership of the buffer backing the DrawTarget

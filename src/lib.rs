@@ -96,7 +96,11 @@ Produces:
 
 */
 
+#![no_std]
 #![warn(missing_copy_implementations)]
+
+#[macro_use]
+extern crate alloc;
 
 mod blitter;
 mod dash;

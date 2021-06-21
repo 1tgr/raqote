@@ -27,7 +27,7 @@ use std::fs::*;
 use std::io::BufWriter;
 
 use crate::stroke::*;
-use crate::{IntRect, IntPoint, Point, Transform, Vector};
+use crate::{IntPoint, IntRect, Point, Transform, Vector};
 
 use euclid::vec2;
 use num_traits::float::Float;
@@ -62,19 +62,14 @@ impl SolidSource {
             a: a,
             r: muldiv255(a as u32, r as u32) as u8,
             g: muldiv255(a as u32, g as u32) as u8,
-            b: muldiv255(a as u32, b as u32) as u8
+            b: muldiv255(a as u32, b as u32) as u8,
         }
     }
 }
 
 impl From<Color> for SolidSource {
     fn from(color: Color) -> Self {
-        SolidSource::from_unpremultiplied_argb(
-            color.a(),
-            color.r(),
-            color.g(),
-            color.b(),
-        )
+        SolidSource::from_unpremultiplied_argb(color.a(), color.r(), color.g(), color.b())
     }
 }
 
@@ -108,7 +103,7 @@ pub enum BlendMode {
     Hue,
     Saturation,
     Color,
-    Luminosity
+    Luminosity,
 }
 
 trait Blender {
@@ -135,11 +130,7 @@ struct BlendRowMask;
 
 fn blend_row_mask<T: blend::Blend>(src: &[u32], mask: &[u8], dst: &mut [u32]) {
     for ((dst, src), mask) in dst.iter_mut().zip(src).zip(mask) {
-        *dst = lerp(
-            *dst,
-            T::blend(*src, *dst),
-            alpha_to_alpha256(*mask as u32),
-        );
+        *dst = lerp(*dst, T::blend(*src, *dst), alpha_to_alpha256(*mask as u32));
     }
 }
 
@@ -154,12 +145,7 @@ struct BlendRowMaskClip;
 
 fn blend_row_mask_clip<T: blend::Blend>(src: &[u32], mask: &[u8], clip: &[u8], dst: &mut [u32]) {
     for (((dst, src), mask), clip) in dst.iter_mut().zip(src).zip(mask).zip(clip) {
-        *dst = alpha_lerp(
-            *dst,
-            T::blend(*src, *dst),
-            *mask as u32,
-            *clip as u32
-        );
+        *dst = alpha_lerp(*dst, T::blend(*src, *dst), *mask as u32, *clip as u32);
     }
 }
 
@@ -207,13 +193,13 @@ fn build_blend_proc<T: Blender>(mode: BlendMode) -> T::Output {
 #[derive(Copy, Clone)]
 pub enum ExtendMode {
     Pad,
-    Repeat
+    Repeat,
 }
 
 #[derive(Copy, Clone, PartialEq)]
 pub enum FilterMode {
     Bilinear,
-    Nearest
+    Nearest,
 }
 
 /// LinearGradients have an implicit start point at 0,0 and an end point at 256,0. The transform
@@ -250,7 +236,12 @@ impl From<Color> for Source<'_> {
 impl<'a> Source<'a> {
     /// Creates a new linear gradient source where the start point corresponds to the gradient
     /// stop at position = 0 and the end point corresponds to the gradient stop at position = 1.
-    pub fn new_linear_gradient(gradient: Gradient, start: Point, end: Point, spread: Spread) -> Source<'a> {
+    pub fn new_linear_gradient(
+        gradient: Gradient,
+        start: Point,
+        end: Point,
+        spread: Spread,
+    ) -> Source<'a> {
         let gradient_vector = Vector::new(end.x - start.x, end.y - start.y);
         // Get length of desired gradient vector
         let length = gradient_vector.length();
@@ -275,7 +266,12 @@ impl<'a> Source<'a> {
     }
 
     /// Creates a new radial gradient that is centered at the given point and has the given radius.
-    pub fn new_radial_gradient(gradient: Gradient, center: Point, radius: f32, spread: Spread) -> Source<'a> {
+    pub fn new_radial_gradient(
+        gradient: Gradient,
+        center: Point,
+        radius: f32,
+        spread: Spread,
+    ) -> Source<'a> {
         // Scale gradient to desired radius
         let scale = Transform::scale(radius, radius);
         // Transform gradient to center of gradient
@@ -287,9 +283,18 @@ impl<'a> Source<'a> {
     }
 
     /// Creates a new radial gradient that is centered at the given point and has the given radius.
-    pub fn new_two_circle_radial_gradient(gradient: Gradient, center1: Point, radius1: f32,  center2: Point, radius2: f32, spread: Spread) -> Source<'a> {
+    pub fn new_two_circle_radial_gradient(
+        gradient: Gradient,
+        center1: Point,
+        radius1: f32,
+        center2: Point,
+        radius2: f32,
+        spread: Spread,
+    ) -> Source<'a> {
         let transform = Transform::identity();
-        Source::TwoCircleRadialGradient(gradient, spread, center1, radius1, center2, radius2, transform)
+        Source::TwoCircleRadialGradient(
+            gradient, spread, center1, radius1, center2, radius2, transform,
+        )
     }
 }
 
@@ -342,8 +347,6 @@ fn scaled_tolerance(x: f32, trans: &Transform) -> f32 {
     x / trans.determinant().abs().sqrt()
 }
 
-
-
 /// The main type used for drawing
 pub struct DrawTarget<Backing = Vec<u32>> {
     width: i32,
@@ -373,8 +376,8 @@ impl DrawTarget {
     }
 
     /// Use a previously used vector for the bitmap and extend it to the given size(if needed)
-    pub fn from_vec(width: i32, height: i32, mut vec: Vec<u32>) -> DrawTarget{
-        vec.resize((width*height) as usize, 0);
+    pub fn from_vec(width: i32, height: i32, mut vec: Vec<u32>) -> DrawTarget {
+        vec.resize((width * height) as usize, 0);
         DrawTarget {
             width,
             height,
@@ -384,7 +387,7 @@ impl DrawTarget {
             buf: vec,
             clip_stack: Vec::new(),
             layer_stack: Vec::new(),
-            transform: Transform::identity()
+            transform: Transform::identity(),
         }
     }
 
@@ -394,12 +397,15 @@ impl DrawTarget {
     }
 }
 
-impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
+impl<Backing> DrawTarget<Backing> {
     /// Use an existing backing storage for the bitmap
     ///
     /// The backing store must be the correct size (width*height elements).
-    pub fn from_backing(width: i32, height: i32, buf : Backing) -> Self {
-        assert_eq!((width*height) as usize, buf.as_ref().len());
+    pub fn from_backing(width: i32, height: i32, buf: Backing) -> Self
+    where
+        Backing: AsRef<[u32]>,
+    {
+        assert_eq!((width * height) as usize, buf.as_ref().len());
         DrawTarget {
             width,
             height,
@@ -409,7 +415,7 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
             buf,
             clip_stack: Vec::new(),
             layer_stack: Vec::new(),
-            transform: Transform::identity()
+            transform: Transform::identity(),
         }
     }
 
@@ -504,18 +510,13 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
 
     fn close(&mut self) {
         if let (Some(first_point), Some(current_point)) = (self.first_point, self.current_point) {
-            self.rasterizer.add_edge(
-                current_point,
-                first_point,
-                false,
-                Point::new(0., 0.),
-            );
+            self.rasterizer
+                .add_edge(current_point, first_point, false, Point::new(0., 0.));
         }
         self.current_point = self.first_point;
     }
 
     fn apply_path(&mut self, path: &Path) {
-
         // we have no height so there can be no edges
         if self.height == 0 {
             return;
@@ -526,7 +527,7 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
                 PathOp::MoveTo(pt) => {
                     self.close();
                     self.move_to(self.transform.transform_point(pt));
-                },
+                }
                 PathOp::LineTo(pt) => self.line_to(self.transform.transform_point(pt)),
                 PathOp::QuadTo(cpt, pt) => self.quad_to(
                     self.transform.transform_point(cpt),
@@ -549,9 +550,9 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
         // intersect with current clip
         let clip = match self.clip_stack.last() {
             Some(Clip {
-                     rect: current_clip,
-                     mask: _,
-                 }) => Clip {
+                rect: current_clip,
+                mask: _,
+            }) => Clip {
                 rect: current_clip.intersection_unchecked(&rect),
                 mask: None,
             },
@@ -593,10 +594,13 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
     }
 
     fn clip_bounds(&self) -> IntRect {
-        self.clip_stack.last().map(|c| c.rect).unwrap_or(IntRect::new(
-            euclid::Point2D::new(0, 0),
-            euclid::Point2D::new(self.width, self.height),
-        ))
+        self.clip_stack
+            .last()
+            .map(|c| c.rect)
+            .unwrap_or(IntRect::new(
+                euclid::Point2D::new(0, 0),
+                euclid::Point2D::new(self.width, self.height),
+            ))
     }
 
     /// Pushes a new layer as the drawing target. This is used for implementing
@@ -613,13 +617,16 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
             rect,
             buf: vec![0; (rect.size().width * rect.size().height) as usize],
             opacity,
-            blend
+            blend,
         });
     }
 
     /// Draws the most recently pushed layer to the drawing target with
     /// the pushed opacity applied.
-    pub fn pop_layer(&mut self) {
+    pub fn pop_layer(&mut self)
+    where
+        Backing: AsMut<[u32]>,
+    {
         let layer = self.layer_stack.pop().unwrap();
         let opacity = (layer.opacity * 255. + 0.5) as u8;
         // Allocating an entire mask just for the opacity is needlessly bad.
@@ -628,42 +635,86 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
         let size = layer.rect.size();
         let ctm = self.transform;
         self.transform = Transform::identity();
-        let image = Source::Image(Image {
-            width: size.width,
-            height: size.height,
-            data: &layer.buf
-        },
-                                  ExtendMode::Pad,
-                                  FilterMode::Nearest,
-                                  Transform::translation(-layer.rect.min.x as f32,
-                                                                -layer.rect.min.y as f32));
-        self.composite(&image, Some(&mask), intrect(0, 0, self.width, self.height), layer.rect, layer.blend, 1.);
+        let image = Source::Image(
+            Image {
+                width: size.width,
+                height: size.height,
+                data: &layer.buf,
+            },
+            ExtendMode::Pad,
+            FilterMode::Nearest,
+            Transform::translation(-layer.rect.min.x as f32, -layer.rect.min.y as f32),
+        );
+        self.composite(
+            &image,
+            Some(&mask),
+            intrect(0, 0, self.width, self.height),
+            layer.rect,
+            layer.blend,
+            1.,
+        );
         self.transform = ctm;
     }
 
     /// Draws an image at (x, y) with the size (width, height). This will rescale the image to the
     /// destination size.
-    pub fn draw_image_with_size_at(&mut self, width: f32, height: f32, x: f32, y: f32, image: &Image, options: &DrawOptions) {
-        let source = Source::Image(*image,
-                                   ExtendMode::Pad,
-                                   FilterMode::Bilinear,
-                                   Transform::translation(-x, -y).then_scale(image.width as f32 / width, image.height as f32 / height));
+    pub fn draw_image_with_size_at(
+        &mut self,
+        width: f32,
+        height: f32,
+        x: f32,
+        y: f32,
+        image: &Image,
+        options: &DrawOptions,
+    ) where
+        Backing: AsMut<[u32]>,
+    {
+        let source = Source::Image(
+            *image,
+            ExtendMode::Pad,
+            FilterMode::Bilinear,
+            Transform::translation(-x, -y)
+                .then_scale(image.width as f32 / width, image.height as f32 / height),
+        );
 
         self.fill_rect(x, y, width, height, &source, options);
     }
 
     /// Draws an image at x, y
-    pub fn draw_image_at(&mut self, x: f32, y: f32, image: &Image, options: &DrawOptions) {
-        self.draw_image_with_size_at(image.width as f32, image.height as f32, x, y, image, options);
+    pub fn draw_image_at(&mut self, x: f32, y: f32, image: &Image, options: &DrawOptions)
+    where
+        Backing: AsMut<[u32]>,
+    {
+        self.draw_image_with_size_at(
+            image.width as f32,
+            image.height as f32,
+            x,
+            y,
+            image,
+            options,
+        );
     }
 
     /// Draws `src` through an untransformed `mask` positioned at `x`, `y` in device space
-    pub fn mask(&mut self, src: &Source, x: i32, y: i32, mask: &Mask) {
-        self.composite(src, Some(&mask.data), intrect(x, y, mask.width, mask.height), intrect(x, y, mask.width, mask.height), BlendMode::SrcOver, 1.);
+    pub fn mask(&mut self, src: &Source, x: i32, y: i32, mask: &Mask)
+    where
+        Backing: AsMut<[u32]>,
+    {
+        self.composite(
+            src,
+            Some(&mask.data),
+            intrect(x, y, mask.width, mask.height),
+            intrect(x, y, mask.width, mask.height),
+            BlendMode::SrcOver,
+            1.,
+        );
     }
 
     /// Strokes `path` with `style` and fills the result with `src`
-    pub fn stroke(&mut self, path: &Path, src: &Source, style: &StrokeStyle, options: &DrawOptions) {
+    pub fn stroke(&mut self, path: &Path, src: &Source, style: &StrokeStyle, options: &DrawOptions)
+    where
+        Backing: AsMut<[u32]>,
+    {
         let tolerance = 0.1;
 
         // Since we're flattening in userspace, we need to compensate for the transform otherwise
@@ -684,13 +735,23 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
 
     /// Fills the rect `x`, `y,`, `width`, `height` with `src`. If the result is an
     /// integer aligned rectangle performance will be faster than filling a rectangular path.
-    pub fn fill_rect(&mut self, x: f32, y: f32, width: f32, height: f32, src: &Source, options: &DrawOptions) {
+    pub fn fill_rect(
+        &mut self,
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        src: &Source,
+        options: &DrawOptions,
+    ) where
+        Backing: AsMut<[u32]>,
+    {
         let ix = x as i32;
         let iy = y as i32;
         let iwidth = width as i32;
         let iheight = height as i32;
-        let integer_rect = ix as f32 == x        && iy as f32 == y &&
-                                iwidth as f32 == width && iheight as f32 == height;
+        let integer_rect =
+            ix as f32 == x && iy as f32 == y && iwidth as f32 == width && iheight as f32 == height;
 
         if self.transform == Transform::identity() && integer_rect && self.clip_stack.is_empty() {
             let bounds = intrect(0, 0, self.width, self.height);
@@ -708,13 +769,21 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
     }
 
     /// Fills `path` with `src`
-    pub fn fill(&mut self, path: &Path, src: &Source, options: &DrawOptions) {
+    pub fn fill(&mut self, path: &Path, src: &Source, options: &DrawOptions)
+    where
+        Backing: AsMut<[u32]>,
+    {
         self.apply_path(path);
         let bounds = self.rasterizer.get_bounds();
         if bounds.size().width > 0 && bounds.size().height > 0 {
             match options.antialias {
                 AntialiasMode::None => {
-                    let mut blitter = MaskBlitter::new(bounds.min.x, bounds.min.y, bounds.size().width, bounds.size().height);
+                    let mut blitter = MaskBlitter::new(
+                        bounds.min.x,
+                        bounds.min.y,
+                        bounds.size().width,
+                        bounds.size().height,
+                    );
                     self.rasterizer.rasterize(&mut blitter, path.winding);
                     self.composite(
                         src,
@@ -726,7 +795,12 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
                     );
                 }
                 AntialiasMode::Gray => {
-                    let mut blitter = MaskSuperBlitter::new(bounds.min.x, bounds.min.y, bounds.size().width, bounds.size().height);
+                    let mut blitter = MaskSuperBlitter::new(
+                        bounds.min.x,
+                        bounds.min.y,
+                        bounds.size().width,
+                        bounds.size().height,
+                    );
                     self.rasterizer.rasterize(&mut blitter, path.winding);
                     self.composite(
                         src,
@@ -743,7 +817,10 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
     }
 
     /// Fills the current clip with the solid color `solid`
-    pub fn clear(&mut self, solid: SolidSource) {
+    pub fn clear(&mut self, solid: SolidSource)
+    where
+        Backing: AsMut<[u32]>,
+    {
         let mut pb = PathBuilder::new();
         if self.clip_stack.is_empty() {
             let color = solid.to_u32();
@@ -808,8 +885,15 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
             let bounds = font.raster_bounds(
                 *id,
                 point_size,
-                fk::Transform2F::row_major(self.transform.m11, self.transform.m12, self.transform.m21, self.transform.m22, 0., 0.)
-                    .translate(fk::vec2f(position.x, position.y)),
+                fk::Transform2F::row_major(
+                    self.transform.m11,
+                    self.transform.m12,
+                    self.transform.m21,
+                    self.transform.m22,
+                    0.,
+                    0.,
+                )
+                .translate(fk::vec2f(position.x, position.y)),
                 fk::HintingOptions::None,
                 antialias_mode,
             );
@@ -817,7 +901,10 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
                 Ok(bounds) => {
                     let origin = bounds.origin();
                     let size = bounds.size();
-                    let bounds = euclid::Rect::new(IntPoint::new(origin.x(), origin.y()), euclid::Size2D::new(size.x(), size.y()));
+                    let bounds = euclid::Rect::new(
+                        IntPoint::new(origin.x(), origin.y()),
+                        euclid::Size2D::new(size.x(), size.y()),
+                    );
                     combined_bounds.union(&bounds)
                 }
                 _ => panic!(),
@@ -838,11 +925,19 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
                 &mut canvas,
                 *id,
                 point_size,
-                fk::Transform2F::row_major(self.transform.m11, self.transform.m12, self.transform.m21, self.transform.m22, 0., 0.)
-                    .translate(fk::vec2f(position.x, position.y)),
+                fk::Transform2F::row_major(
+                    self.transform.m11,
+                    self.transform.m12,
+                    self.transform.m21,
+                    self.transform.m22,
+                    0.,
+                    0.,
+                )
+                .translate(fk::vec2f(position.x, position.y)),
                 fk::HintingOptions::None,
                 antialias_mode,
-            ).unwrap();
+            )
+            .unwrap();
         }
 
         self.composite(
@@ -856,69 +951,66 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
     }
 }
 
-impl DrawTarget {
-    fn choose_blitter<'a, 'b, 'c>(mask: Option<&[u8]>, clip_stack: &'a Vec<Clip>, blitter_storage: &'b mut ShaderBlitterStorage<'a>, shader: &'a dyn Shader, blend: BlendMode, dest: &'a mut [u32], dest_bounds: IntRect, width: i32) -> &'b mut dyn Blitter {
-        *blitter_storage = match (mask, clip_stack.last()) {
-            (Some(_mask), Some(Clip {
-                        rect: _,
-                        mask: Some(clip),
-                    })) => {
-                if blend == BlendMode::SrcOver {
-                    let scb = ShaderClipMaskBlitter {
-                        x: dest_bounds.min.x,
-                        y: dest_bounds.min.y,
-                        shader,
-                        tmp: vec![0; width as usize],
-                        dest,
-                        dest_stride: dest_bounds.size().width,
-                        clip,
-                        clip_stride: width,
-                    };
-                    ShaderBlitterStorage::ShaderClipMaskBlitter(scb)
-                } else {
-                    let blend_fn = build_blend_proc::<BlendRowMaskClip>(blend);
-                    let scb_blend = ShaderClipBlendMaskBlitter {
-                        x: dest_bounds.min.x,
-                        y: dest_bounds.min.y,
-                        shader,
-                        tmp: vec![0; width as usize],
-                        dest,
-                        dest_stride: dest_bounds.size().width,
-                        clip,
-                        clip_stride: width,
-                        blend_fn
-                    };
-                    ShaderBlitterStorage::ShaderClipBlendMaskBlitter(scb_blend)
-                }
+fn choose_blitter<'a, 'b, 'c>(
+    mask: Option<&[u8]>,
+    clip_stack: &'a Vec<Clip>,
+    blitter_storage: &'b mut ShaderBlitterStorage<'a>,
+    shader: &'a dyn Shader,
+    blend: BlendMode,
+    dest: &'a mut [u32],
+    dest_bounds: IntRect,
+    width: i32,
+) -> &'b mut dyn Blitter {
+    *blitter_storage = match (mask, clip_stack.last()) {
+        (
+            Some(_mask),
+            Some(Clip {
+                rect: _,
+                mask: Some(clip),
+            }),
+        ) => {
+            if blend == BlendMode::SrcOver {
+                let scb = ShaderClipMaskBlitter {
+                    x: dest_bounds.min.x,
+                    y: dest_bounds.min.y,
+                    shader,
+                    tmp: vec![0; width as usize],
+                    dest,
+                    dest_stride: dest_bounds.size().width,
+                    clip,
+                    clip_stride: width,
+                };
+                ShaderBlitterStorage::ShaderClipMaskBlitter(scb)
+            } else {
+                let blend_fn = build_blend_proc::<BlendRowMaskClip>(blend);
+                let scb_blend = ShaderClipBlendMaskBlitter {
+                    x: dest_bounds.min.x,
+                    y: dest_bounds.min.y,
+                    shader,
+                    tmp: vec![0; width as usize],
+                    dest,
+                    dest_stride: dest_bounds.size().width,
+                    clip,
+                    clip_stride: width,
+                    blend_fn,
+                };
+                ShaderBlitterStorage::ShaderClipBlendMaskBlitter(scb_blend)
             }
-            (Some(_mask), _) => {
-                if blend == BlendMode::SrcOver {
-                    let sb = ShaderMaskBlitter {
-                        x: dest_bounds.min.x,
-                        y: dest_bounds.min.y,
-                        shader: &*shader,
-                        tmp: vec![0; width as usize],
-                        dest,
-                        dest_stride: dest_bounds.size().width,
-                    };
-                    ShaderBlitterStorage::ShaderMaskBlitter(sb)
-                } else {
-                    let blend_fn = build_blend_proc::<BlendRowMask>(blend);
-                    let sb_blend = ShaderBlendMaskBlitter {
-                        x: dest_bounds.min.x,
-                        y: dest_bounds.min.y,
-                        shader: &*shader,
-                        tmp: vec![0; width as usize],
-                        dest,
-                        dest_stride: dest_bounds.size().width,
-                        blend_fn,
-                    };
-                    ShaderBlitterStorage::ShaderBlendMaskBlitter(sb_blend)
-                }
-            }
-            (None, _) => {
-                let blend_fn = build_blend_proc::<BlendRow>(blend);
-                let sb_blend = ShaderBlendBlitter {
+        }
+        (Some(_mask), _) => {
+            if blend == BlendMode::SrcOver {
+                let sb = ShaderMaskBlitter {
+                    x: dest_bounds.min.x,
+                    y: dest_bounds.min.y,
+                    shader: &*shader,
+                    tmp: vec![0; width as usize],
+                    dest,
+                    dest_stride: dest_bounds.size().width,
+                };
+                ShaderBlitterStorage::ShaderMaskBlitter(sb)
+            } else {
+                let blend_fn = build_blend_proc::<BlendRowMask>(blend);
+                let sb_blend = ShaderBlendMaskBlitter {
                     x: dest_bounds.min.x,
                     y: dest_bounds.min.y,
                     shader: &*shader,
@@ -927,25 +1019,48 @@ impl DrawTarget {
                     dest_stride: dest_bounds.size().width,
                     blend_fn,
                 };
-                ShaderBlitterStorage::ShaderBlendBlitter(sb_blend)
+                ShaderBlitterStorage::ShaderBlendMaskBlitter(sb_blend)
             }
-        };
-
-        match blitter_storage {
-            ShaderBlitterStorage::None => unreachable!(),
-            ShaderBlitterStorage::ShaderBlendMaskBlitter(s) => s,
-            ShaderBlitterStorage::ShaderClipBlendMaskBlitter(s) => s,
-            ShaderBlitterStorage::ShaderMaskBlitter(s) => s,
-            ShaderBlitterStorage::ShaderClipMaskBlitter(s) => s,
-            ShaderBlitterStorage::ShaderBlendBlitter(s) => s,
         }
+        (None, _) => {
+            let blend_fn = build_blend_proc::<BlendRow>(blend);
+            let sb_blend = ShaderBlendBlitter {
+                x: dest_bounds.min.x,
+                y: dest_bounds.min.y,
+                shader: &*shader,
+                tmp: vec![0; width as usize],
+                dest,
+                dest_stride: dest_bounds.size().width,
+                blend_fn,
+            };
+            ShaderBlitterStorage::ShaderBlendBlitter(sb_blend)
+        }
+    };
+
+    match blitter_storage {
+        ShaderBlitterStorage::None => unreachable!(),
+        ShaderBlitterStorage::ShaderBlendMaskBlitter(s) => s,
+        ShaderBlitterStorage::ShaderClipBlendMaskBlitter(s) => s,
+        ShaderBlitterStorage::ShaderMaskBlitter(s) => s,
+        ShaderBlitterStorage::ShaderClipMaskBlitter(s) => s,
+        ShaderBlitterStorage::ShaderBlendBlitter(s) => s,
     }
 }
 
-impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
+impl<Backing> DrawTarget<Backing> {
     /// `mask_rect` is in DrawTarget space. i.e size is the size of the mask and origin is the position.
     /// you can not render a part of the mask
-    fn composite(&mut self, src: &Source, mask: Option<&[u8]>, mask_rect: IntRect, mut rect: IntRect, blend: BlendMode, alpha: f32) {
+    fn composite(
+        &mut self,
+        src: &Source,
+        mask: Option<&[u8]>,
+        mask_rect: IntRect,
+        mut rect: IntRect,
+        blend: BlendMode,
+        alpha: f32,
+    ) where
+        Backing: AsMut<[u32]>,
+    {
         let ti = self.transform.inverse();
         let ti = if let Some(ti) = ti {
             ti
@@ -958,7 +1073,7 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
 
         let (dest, dest_bounds) = match self.layer_stack.last_mut() {
             Some(layer) => (&mut layer.buf[..], layer.rect),
-            None => (self.buf.as_mut(), intrect(0, 0, self.width, self.height))
+            None => (self.buf.as_mut(), intrect(0, 0, self.width, self.height)),
         };
 
         rect = rect
@@ -973,7 +1088,16 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
         let shader = choose_shader(&ti, src, alpha, &mut shader_storage);
 
         let mut blitter_storage = ShaderBlitterStorage::None;
-        let blitter = DrawTarget::choose_blitter(mask, &self.clip_stack, &mut blitter_storage, shader, blend, dest, dest_bounds, self.width);
+        let blitter = choose_blitter(
+            mask,
+            &self.clip_stack,
+            &mut blitter_storage,
+            shader,
+            blend,
+            dest,
+            dest_bounds,
+            self.width,
+        );
 
         match mask {
             Some(mask) => {
@@ -994,18 +1118,31 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
     }
 
     /// Draws `src_rect` of `src` at `dst`. The current transform and clip are ignored
-    pub fn composite_surface<F: Fn(&[u32], &mut [u32]), SrcBacking: AsRef<[u32]>>(&mut self, src: &DrawTarget<SrcBacking>, src_rect: IntRect, dst: IntPoint, f: F) {
+    pub fn composite_surface<F, SrcBacking>(
+        &mut self,
+        src: &DrawTarget<SrcBacking>,
+        src_rect: IntRect,
+        dst: IntPoint,
+        f: F,
+    ) where
+        Backing: AsMut<[u32]>,
+        SrcBacking: AsRef<[u32]>,
+        F: Fn(&[u32], &mut [u32]),
+    {
         let dst_rect = intrect(0, 0, self.width, self.height);
 
         // intersect the src_rect with the source size so that we don't go out of bounds
         let src_rect = src_rect.intersection_unchecked(&intrect(0, 0, src.width, src.height));
 
         let src_rect = dst_rect
-            .intersection_unchecked(&src_rect.translate(dst.to_vector())).translate(-dst.to_vector());
+            .intersection_unchecked(&src_rect.translate(dst.to_vector()))
+            .translate(-dst.to_vector());
 
         // clamp requires Float so open code it
-        let dst = IntPoint::new(dst.x.max(dst_rect.min.x).min(dst_rect.max.x),
-                                dst.y.max(dst_rect.min.y).min(dst_rect.max.y));
+        let dst = IntPoint::new(
+            dst.x.max(dst_rect.min.x).min(dst_rect.max.x),
+            dst.y.max(dst_rect.min.y).min(dst_rect.max.y),
+        );
 
         if src_rect.is_empty() {
             return;
@@ -1016,22 +1153,40 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
             let dst_row_end = dst_row_start + src_rect.size().width as usize;
             let src_row_start = (src_rect.min.x + y * src.width) as usize;
             let src_row_end = src_row_start + src_rect.size().width as usize;
-            f(&src.buf.as_ref()[src_row_start..src_row_end], &mut self.buf.as_mut()[dst_row_start..dst_row_end]);
+            f(
+                &src.buf.as_ref()[src_row_start..src_row_end],
+                &mut self.buf.as_mut()[dst_row_start..dst_row_end],
+            );
         }
     }
 
     /// Draws `src_rect` of `src` at `dst`. The current transform and clip are ignored.
     /// `src_rect` is clamped to (0, 0, src.width, src.height).
-    pub fn copy_surface<SrcBacking : AsRef<[u32]>>(&mut self, src: &DrawTarget<SrcBacking>, src_rect: IntRect, dst: IntPoint) {
-        self.composite_surface(src, src_rect, dst, |src, dst| {
-            dst.copy_from_slice(src)
-        })
+    pub fn copy_surface<SrcBacking>(
+        &mut self,
+        src: &DrawTarget<SrcBacking>,
+        src_rect: IntRect,
+        dst: IntPoint,
+    ) where
+        Backing: AsMut<[u32]>,
+        SrcBacking: AsRef<[u32]>,
+    {
+        self.composite_surface(src, src_rect, dst, |src, dst| dst.copy_from_slice(src))
     }
 
     /// Blends `src_rect` of `src` at `dst`using `blend` mode.
     /// The current transform and clip are ignored.
     /// `src_rect` is clamped to (0, 0, `src.width`, `src.height`).
-    pub fn blend_surface<SrcBacking : AsRef<[u32]>>(&mut self, src: &DrawTarget<SrcBacking>, src_rect: IntRect, dst: IntPoint, blend: BlendMode) {
+    pub fn blend_surface<SrcBacking>(
+        &mut self,
+        src: &DrawTarget<SrcBacking>,
+        src_rect: IntRect,
+        dst: IntPoint,
+        blend: BlendMode,
+    ) where
+        Backing: AsMut<[u32]>,
+        SrcBacking: AsRef<[u32]>,
+    {
         let blend_fn = build_blend_proc::<BlendRow>(blend);
         self.composite_surface(src, src_rect, dst, |src, dst| {
             blend_fn(src, dst);
@@ -1040,7 +1195,16 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
 
     /// Blends `src_rect` of `src` at `dst` using `alpha`. The current transform and clip are ignored.
     /// `src_rect` is clamped to (0, 0, `src.width`, `src.height`).
-    pub fn blend_surface_with_alpha<SrcBacking : AsRef<[u32]>>(&mut self, src: &DrawTarget<SrcBacking>, src_rect: IntRect, dst: IntPoint, alpha: f32) {
+    pub fn blend_surface_with_alpha<SrcBacking>(
+        &mut self,
+        src: &DrawTarget<SrcBacking>,
+        src_rect: IntRect,
+        dst: IntPoint,
+        alpha: f32,
+    ) where
+        Backing: AsMut<[u32]>,
+        SrcBacking: AsRef<[u32]>,
+    {
         let alpha = (alpha * 255. + 0.5) as u8;
 
         self.composite_surface(src, src_rect, dst, |src, dst| {
@@ -1049,19 +1213,28 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
     }
 
     /// Returns a reference to the underlying pixel data
-    pub fn get_data(&self) -> &[u32] {
+    pub fn get_data(&self) -> &[u32]
+    where
+        Backing: AsRef<[u32]>,
+    {
         self.buf.as_ref()
     }
 
     /// Returns a mut reference to the underlying pixel data as ARGB with a representation
     /// like: (A << 24) | (R << 16) | (G << 8) | B
-    pub fn get_data_mut(&mut self) -> &mut [u32] {
+    pub fn get_data_mut(&mut self) -> &mut [u32]
+    where
+        Backing: AsMut<[u32]>,
+    {
         self.buf.as_mut()
     }
 
     /// Returns a reference to the underlying pixel data as individual bytes with the order BGRA
     /// on little endian.
-    pub fn get_data_u8(&self) -> &[u8] {
+    pub fn get_data_u8(&self) -> &[u8]
+    where
+        Backing: AsRef<[u32]>,
+    {
         let buf = self.buf.as_ref();
         let p = buf.as_ptr();
         let len = buf.len();
@@ -1072,7 +1245,10 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
 
     /// Returns a mut reference to the underlying pixel data as individual bytes with the order BGRA
     /// on little endian.
-    pub fn get_data_u8_mut(&mut self) -> &mut [u8] {
+    pub fn get_data_u8_mut(&mut self) -> &mut [u8]
+    where
+        Backing: AsMut<[u32]>,
+    {
         let buf = self.buf.as_mut();
         let p = buf.as_mut_ptr();
         let len = buf.len();
@@ -1088,7 +1264,10 @@ impl<Backing : AsRef<[u32]> + AsMut<[u32]>> DrawTarget<Backing> {
 
     /// Saves the current pixel to a png file at `path`
     #[cfg(feature = "png")]
-    pub fn write_png<P: AsRef<std::path::Path>>(&self, path: P) -> Result<(), png::EncodingError> {
+    pub fn write_png<P>(&self, path: P) -> Result<(), png::EncodingError>
+    where
+        P: AsRef<std::path::Path>,
+    {
         let file = File::create(path)?;
 
         let w = &mut BufWriter::new(file);
